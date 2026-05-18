@@ -1,107 +1,101 @@
-# ResNet-18 / ViT-Tiny Pet Classification
+# VisDrone YOLO Tracking Project
 
-This project implements pet classification on the Oxford-IIIT Pet dataset using PyTorch. It supports training and evaluation with both ResNet-18 and ViT-Tiny models.
+This repository contains a YOLO-based object detection and tracking pipeline built for the VisDrone dataset. It includes dataset preparation, YOLO training, video tracking with object IDs, and a line-crossing counting feature for tracking results.
 
-## Project Structure
+## Features
 
-- `main.py`: Training entrypoint with model selection and hyperparameter options.
-- `dataset.py`: Dataset loading and preprocessing using `torchvision.datasets.OxfordIIITPet`.
-- `model.py`: Model definitions for `ResNet18` and `ViTTiny`.
-- `trainer.py`: Training and evaluation logic.
-- `requirements.txt`: Python package dependencies.
+- Download and prepare the VisDrone dataset
+- Convert VisDrone annotations to YOLO format
+- Train YOLO models (`yolov8n`, `yolo26n`) on VisDrone data
+- Track objects in video with Ultralyitcs tracker
+- Count unique objects crossing a virtual line during video tracking
+- Save annotated tracking videos to `outputs/`
 
-## Dependencies
+## Requirements
 
-Create a virtual environment and install dependencies:
+Install the Python dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Required packages:
+The project also depends on:
 
-- `torch` / `torchvision` / `torchaudio`
-- `timm`
-- `numpy`
-- `matplotlib`
-- `tqdm`
+- `torch` (choose the appropriate CPU or CUDA build for your environment)
 - `swanlab`
+- `kagglehub`
 
-## Dataset
+## Project Structure
 
-This project uses the `OxfordIIITPet` dataset from `torchvision`:
+- `dataset.py` - prepare and convert VisDrone dataset to YOLO format
+- `trainer.py` - YOLO training and evaluation helpers
+- `tracker.py` - video tracking and line-crossing count logic
+- `main.py` - command-line entry point for training and tracking
+- `data/` - raw dataset and converted YOLO dataset
+- `videos/` - source videos for tracking
+- `outputs/` - generated tracking videos and results
 
-- Training split: `trainval`
-- Test split: `test`
+## Dataset Preparation
 
-The dataset is downloaded automatically into the `./data` folder.
+1. Place the VisDrone dataset under `data/raw/`.
+2. Run the dataset conversion pipeline from `main.py`, which also prepares `visdrone.yaml`.
 
-## Usage
+The pipeline automatically downloads the dataset via Kaggle if it is not already present.
 
-Run the main script from the command line:
+## Training
 
-```bash
-python main.py [--model resnet18|vittiny] [--scratch] [--epochs N] [--batch-size B] [--img-size S] [--lr-backbone LR1] [--lr-fc LR2] [--weight-decay WD]
-```
-
-### Common arguments
-
-- `--model`: Choose the model type (`resnet18` by default, or `vittiny`).
-- `--scratch`: Train from scratch (only available for `resnet18`).
-- `--epochs`: Number of training epochs (default: `300`).
-- `--batch-size`: Batch size (default: `64`).
-- `--img-size`: Input image size (default: `224`).
-- `--lr-backbone`: Learning rate for the backbone.
-- `--lr-fc`: Learning rate for the classification head.
-- `--weight-decay`: Weight decay.
-
-### Examples
+Use `main.py` to train a YOLO model on the converted VisDrone dataset.
 
 ```bash
-python main.py --model resnet18 --epochs 100 --batch-size 64 --img-size 224
+python main.py --train --model yolov8n --epoch 100 --batchsize 8 --img-size 640
 ```
+
+This will:
+
+- prepare the dataset
+- generate `visdrone.yaml`
+- train the model using Ultralyitcs YOLO
+- save best weights under `runs/detect/train*/weights/best.pt`
+
+## Tracking
+
+Use `main.py` to run object tracking on a video file.
 
 ```bash
-python main.py --model vittiny --epochs 100 --batch-size 128 --img-size 224 --lr-backbone 1e-3 --lr-fc 1e-2 --weight-decay 5e-4
+python main.py --track --model yolov8n --model-id 5 --video-source videos/video1.mp4
 ```
 
-> Note: `ViT-Tiny` does not support `--scratch` and must use pretrained weights.
+This will:
 
-## Model Details
+- load the trained model weights from `runs/detect/train-5/weights/best.pt`
+- run tracking on the provided video
+- save the annotated video to `outputs/<video_name>_tracked.mp4`
 
-### ResNet-18
+## Line Crossing Count
 
-- Supports ImageNet pretrained weights.
-- Replaces the final fully connected layer with `Dropout + Linear` for 37 output classes.
+The tracking module includes a line-crossing counter. By default, it draws a horizontal center line on the video and counts unique tracked objects that cross the line.
 
-### ViT-Tiny
+For custom usage, call `YOLOTracker` directly:
 
-- Uses `timm` to load `vit_tiny_patch16_224` pretrained weights.
-- Replaces the final `head` with a linear layer for 37 classes.
+```python
+from tracker import YOLOTracker
 
-## Training Workflow
+yolotrack = YOLOTracker(model_ind=5, save=True)
+yolotrack.tracking(
+    source="videos/real_strengthed.mp4",
+    line=((100, 200), (540, 200))
+)
+```
 
-Training is implemented in `Trainer`:
+## Output
 
-- Computes cross-entropy loss and backpropagation.
-- Logs training loss via `swanlab`.
-- Prints training loss every 10 mini-batches.
-- Validates every 50 optimization steps, logging validation loss and accuracy.
+Tracked videos are saved in the `outputs/` directory. Each frame is annotated with:
 
-## Evaluation
-
-After training, the script evaluates the final model on the test set using `Evaluator` and prints the test accuracy.
-
-## Saved Models
-
-Trained weights are saved to `saved_models/` as:
-
-- `saved_models/resnet18_pretrained.pth`
-- `saved_models/resnet18_scratch.pth`
-- `saved_models/vittiny_pretrained.pth`
+- tracked object boxes and IDs
+- the virtual line
+- the current count of unique objects that crossed the line
 
 ## Notes
 
-- The script automatically uses `cuda` if a GPU is available.
-- If dataset download fails, verify network access or manually place data under `./data`.
-- `swanlab` is used for experiment tracking; you can remove related calls if logging is not needed.
+- The project is designed for the VisDrone dataset, but the YOLO conversion and tracking pipeline can be adapted for other datasets with similar format.
+- If you want to use a different trained model ID, update `--model-id` to match the saved training run.
